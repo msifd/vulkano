@@ -5,27 +5,37 @@ extern crate vulkano_shaders;
 
 use proc_macro::TokenStream;
 
-#[proc_macro_derive(VulkanoShader, attributes(src, ty))]
+#[proc_macro_derive(VulkanoShader, attributes(file, src, ty))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let syn_item = syn::parse_macro_input(&input.to_string()).unwrap();
 
-    let src = syn_item.attrs.iter().filter_map(|attr| {
-        match attr.value {
-            syn::MetaItem::NameValue(ref i, syn::Lit::Str(ref val, _)) if i == "src" => {
-                Some(val.clone())
-            },
-            _ => None
-        }
-    }).next().expect("Can't find `src` attribute ; put #[src = \"...\"] for example.");
+    let get_attr = |attr_name| {
+        syn_item.attrs.iter().filter_map(|attr| {
+            match attr.value {
+                syn::MetaItem::NameValue(ref i, syn::Lit::Str(ref val, _)) if i == attr_name => {
+                    Some(val.clone())
+                },
+                _ => None
+            }
+        }).next()
+    };
 
-    let ty_str = syn_item.attrs.iter().filter_map(|attr| {
-        match attr.value {
-            syn::MetaItem::NameValue(ref i, syn::Lit::Str(ref val, _)) if i == "ty" => {
-                Some(val.clone())
-            },
-            _ => None
-        }
-    }).next().expect("Can't find `ty` attribute ; put #[ty = \"vertex\"] for example.");
+    let file_src = (get_attr("file"), get_attr("src"));
+    let src = match file_src {
+        (Some(filename), _) => {
+            use std::io::Read;
+            use std::fs::File;
+
+            let mut file = File::open(filename).expect("Can't open shader file");
+            let mut s = String::new();
+            file.read_to_string(&mut s).expect("Can't read shader file");
+            s
+        },
+        (None, Some(src)) => src,
+        (None, None) => panic!("Can't find `file` or `src` attribute"),
+    };
+
+    let ty_str = get_attr("ty").expect("Can't find `ty` attribute ; put #[ty = \"vertex\"] for example.");
 
     let ty = match &ty_str[..] {
         "vertex" => glsl_to_spirv::ShaderType::Vertex,
